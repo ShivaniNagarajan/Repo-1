@@ -1,11 +1,9 @@
-name: Merge Branch
+name: Merge Approved PR
 
 on:
-  pull_request_target:  # Change from pull_request to pull_request_target
+  pull_request:
     types:
-      - opened
-      - synchronize
-      - reopened
+      - reviewed
     branches:
       - main
 
@@ -28,6 +26,16 @@ jobs:
       run: |
         git fetch origin pull/${{ github.event.pull_request.number }}/head:pr-branch
         git fetch origin main
+
+    - name: Check if PR is approved
+      run: |
+        APPROVALS=$(gh pr view ${{ github.event.pull_request.number }} --json reviews --jq '.reviews | map(select(.state == "APPROVED")) | length')
+        if [ "$APPROVALS" -gt 0 ]; then
+          echo "PR is approved. Proceeding with the merge."
+        else
+          echo "PR is not approved. Skipping merge."
+          exit 1
+        fi
 
     - name: Merge PR into main
       run: |

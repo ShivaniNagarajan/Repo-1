@@ -1,49 +1,45 @@
-name: Merge Approved PRs
+name: Merge PR on Approval
 
 on:
-  pull_request_review:
-    types: 
-      - submitted  # Triggers when a review is submitted
-
-permissions:
-  pull-requests: write  # Ensure the action has permission to merge PRs
+  pull_request_target:
+    types: [review_submitted]  # Trigger on review submission
 
 jobs:
-  auto-merge-pr:
+  merge_on_approval:
     runs-on: ubuntu-latest
 
+    if: ${{ github.event.review.state == 'approved' }}  
+
+    permissions:
+      contents: write
+      pull-requests: write
+      repository-projects: write
+
     steps:
-    - name: Checkout Repository
+    - name: Checkout the repository
       uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 
 
-    - name: Auto-merge PR if approved
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Set up Git user
       run: |
-        echo "Checking if the PR has been approved"
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
         
-        # Extract necessary PR information
-        PR_NUMBER=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
-        REPO_OWNER=$(jq -r '.repository.owner.login' "$GITHUB_EVENT_PATH")
-        REPO_NAME=$(jq -r '.repository.name' "$GITHUB_EVENT_PATH")
-
-        echo "PR Number: $PR_NUMBER"
-        echo "Repository: $REPO_OWNER/$REPO_NAME"
-
-        # Check if the PR is approved
-        APPROVALS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/pulls/$PR_NUMBER/reviews" | 
-            jq '[.[] | select(.state == "APPROVED")] | length')
-
-        echo "Number of approvals: $APPROVALS"
-
-        if [ "$APPROVALS" -ge 1 ]; then
-          echo "PR is approved. Attempting to merge."
-          curl -s -X PUT -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/pulls/$PR_NUMBER/merge" \
-            -d '{"commit_title": "Auto-merged by GitHub Actions", "merge_method": "merge"}'
-        else
-          echo "PR is not yet approved. No action taken."
-        fi
+    - name: Fetch and merge the PR
+      run: |
+        PR_BRANCH="pr-${{ github.event.pull_request.number }}"
+        BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+        # Checkout and track the PR branch
+        git fetch origin pull/${{ github.event.pull_request.number }}/head:${PR_BRANCH}
+        git checkout $PR_BRANCH
+        # Checkout the base branch
+        git checkout $BASE_BRANCH
+        # Merge the PR branch into the base branch
+        git merge --no-ff $PR_BRANCH -m "Merging PR #${{ github.event.pull_request.number }}"
+        
+    - name: Push merged changes
+      env:
+        GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}
+      run: |
+        git push origin $BASE_BRANCH

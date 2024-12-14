@@ -2,7 +2,7 @@ name: Merge PR on Approval
 
 on:
   pull_request_target:
-    types: [review_submitted]  # Trigger on review submission
+    types: [review_submitted]
 
 jobs:
   merge_on_approval:

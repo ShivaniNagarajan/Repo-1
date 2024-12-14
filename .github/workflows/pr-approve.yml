@@ -1,0 +1,50 @@
+name: Merge Branch
+
+on:
+  pull_request_target:  # Change from pull_request to pull_request_target
+    types:
+      - opened
+      - synchronize
+      - reopened
+    branches:
+      - main
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout the repository
+      uses: actions/checkout@v3
+      with:
+        ref: main  # Ensure the main branch is checked out
+
+    - name: Set up Git
+      run: |
+        git config --global user.name 'github-actions'
+        git config --global user.email 'github-actions@github.com'
+
+    - name: Fetch pull request and main branch
+      run: |
+        git fetch origin pull/${{ github.event.pull_request.number }}/head:pr-branch
+        git fetch origin main
+
+    - name: Merge PR into main
+      run: |
+        git checkout main
+        git merge pr-branch --no-ff --commit --message "Merge PR #${{ github.event.pull_request.number }} from fork"
+
+    - name: Push the merged result to the main branch
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Use GITHUB_TOKEN to authenticate
+      run: |
+        git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+        git push origin main
+
+    - name: Notify on success
+      if: success()
+      run: echo "PR merged successfully!"
+
+    - name: Fail if merge encounters issues
+      if: failure()
+      run: echo "Failed to merge PR!"

@@ -38,6 +38,6 @@ jobs:
         
     - name: Push merged changes
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}
       run: |
         git push origin $BASE_BRANCH

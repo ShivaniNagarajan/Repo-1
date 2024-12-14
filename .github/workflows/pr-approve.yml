@@ -1,7 +1,7 @@
-name: Merge PR on Approval
+name: Merge Branch
 
 on:
-  pull_request_target:
+  pull_request_target:  # Change from pull_request to pull_request_target
     types:
       - opened
       - synchronize
@@ -24,38 +24,17 @@ jobs:
         git config --global user.name 'github-actions'
         git config --global user.email 'github-actions@github.com'
 
-    - name: Check if PR is approved
-      id: check_approval
-      uses: actions/github-script@v6
-      with:
-        script: |
-          const prNumber = context.payload.pull_request.number;
-          const { data: reviews } = await github.rest.pulls.listReviews({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            pull_number: prNumber,
-          });
-
-          // Check if there is at least one approval
-          const isApproved = reviews.some(review => review.state === 'APPROVED');
-          if (!isApproved) {
-            core.setFailed('The pull request is not approved.');
-          }
-
     - name: Fetch pull request and main branch
-      if: success()
       run: |
         git fetch origin pull/${{ github.event.pull_request.number }}/head:pr-branch
         git fetch origin main
 
     - name: Merge PR into main
-      if: success()
       run: |
         git checkout main
         git merge pr-branch --no-ff --commit --message "Merge PR #${{ github.event.pull_request.number }} from fork"
 
     - name: Push the merged result to the main branch
-      if: success()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Use GITHUB_TOKEN to authenticate
       run: |

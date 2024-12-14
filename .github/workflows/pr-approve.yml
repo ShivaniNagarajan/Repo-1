@@ -4,14 +4,14 @@ on:
   pull_request_review:
     types: [submitted]  
 
-permissions:
-  contents: write
-  
 jobs:
   merge_on_approval:
     runs-on: ubuntu-latest
 
     if: ${{ github.event.review.state == 'approved' }}  
+
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout the repository
@@ -23,22 +23,19 @@ jobs:
       run: |
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
-
+        
     - name: Fetch and merge the PR
       run: |
         PR_BRANCH="pr-${{ github.event.pull_request.number }}"
         BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
-
         # Checkout and track the PR branch
         git fetch origin pull/${{ github.event.pull_request.number }}/head:${PR_BRANCH}
         git checkout $PR_BRANCH
-
         # Checkout the base branch
         git checkout $BASE_BRANCH
-
         # Merge the PR branch into the base branch
         git merge --no-ff $PR_BRANCH -m "Merging PR #${{ github.event.pull_request.number }}"
-
+        
     - name: Push merged changes
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -12,37 +12,27 @@ jobs:
     - name: Checkout the code
       uses: actions/checkout@v3
 
+    - name: Install yq
+      run: |
+        sudo apt-get update && sudo apt-get install -y yq
+
     - name: Check if the PR is approved
       id: check_approval
       run: |
-        python3 -c "
-import json
-import os
-import requests
+        PR_NUMBER=$(yq e .pull_request.number < $GITHUB_EVENT_PATH)
+        APPROVED=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews" | \
+          yq e 'map(select(.state == "APPROVED")) | length > 0')
 
-# Load the event data
-with open(os.environ['GITHUB_EVENT_PATH']) as f:
-    event_data = json.load(f)
-
-pr_number = event_data['pull_request']['number']
-
-# Get PR reviews
-reviews = requests.get(
-    f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/pulls/{pr_number}/reviews',
-    headers={'Authorization': f'token {os.environ["GITHUB_TOKEN"]}'}
-).json()
-
-# Check if there's an approval
-approved = any(review['state'] == 'APPROVED' for review in reviews)
-if not approved:
-    print('PR is not approved, exiting')
-    exit(1)
-        "
+        if [[ "$APPROVED" != "true" ]]; then
+          echo "PR is not approved, exiting"
+          exit 1
+        fi
 
     - name: Merge PR
       if: steps.check_approval.outcome == 'success'
       run: |
-        PR_NUMBER=$(jq --raw-output .pull_request.number < $GITHUB_EVENT_PATH)
+        PR_NUMBER=$(yq e .pull_request.number < $GITHUB_EVENT_PATH)
         curl -X PUT -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
           -d '{"merge_method":"merge"}' \
           "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER/merge"

@@ -1,8 +1,9 @@
 name: Merge PR from Fork
-on:
-  pull_request_target:
-    types: [opened, reopened, synchronize]  # Run when PR is created, updated, or reopened
 
+on:
+  pull_request_review:  # Run only when a review is submitted
+    types: [submitted]   # Run when a review is submitted (not just opened)
+    
 jobs:
   merge_pr:
     runs-on: ubuntu-latest
@@ -31,7 +32,7 @@ jobs:
         PR_NUMBER=${{ github.event.pull_request.number }}
         echo "Checking review status for PR #$PR_NUMBER"
         
-        # Get the reviews for the PR
+        # Get the reviews for the PR and check if it is approved
         REVIEWS=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews --jq '.[] | select(.state == "APPROVED")')
         
         if [ -z "$REVIEWS" ]; then

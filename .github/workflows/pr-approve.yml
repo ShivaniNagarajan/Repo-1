@@ -1,35 +1,58 @@
 name: Merge PR from Fork
-
 on:
-  pull_request:
-    types: [submitted]
+  pull_request_target:
+    types: [opened, reopened, synchronize]  # Run when PR is created, updated, or reopened
 
 jobs:
-  merge:
-    if: github.event.pull_request.merged == true
+  merge_pr:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write  # Grant write access to merge PRs
+      contents: write       # Grant access to repo contents
 
     steps:
-    - name: Checkout Repository
+    - name: Checkout repository
       uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.ref }}
+        repository: ${{ github.event.pull_request.head.repo.full_name }}
 
-    - name: Setup Git
+    - name: Set up GitHub CLI
       run: |
-        git config --global user.name "Your Name"
-        git config --global user.email "your-email@example.com"
+        echo "Installing GitHub CLI"
+        sudo apt-get update
+        sudo apt-get install -y gh
+
+    - name: Authenticate GitHub CLI
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: gh auth login --with-token < <(echo "${{ secrets.GITHUB_TOKEN }}")
+
+    - name: Check PR Approval Status
+      id: check_approval
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        PR_NUMBER=${{ github.event.pull_request.number }}
+        echo "Checking review status for PR #$PR_NUMBER"
+        
+        # Get the reviews for the PR
+        REVIEWS=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews --jq '.[] | select(.state == "APPROVED")')
+        
+        if [ -z "$REVIEWS" ]; then
+          echo "No approvals found. Skipping merge."
+          exit 1  # Stop the workflow if there are no approved reviews
+        else
+          echo "PR has been approved. Proceeding with the merge."
+        fi
 
     - name: Merge PR
+      if: success()  # Ensure previous step succeeded (PR is approved)
       env:
-        PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        PR_NUMBER=$(echo "${{ github.event.pull_request.number }}")
-        REPO_OWNER=$(echo "${{ github.repository_owner }}")
-        REPO_NAME=$(echo "${{ github.event.repository.name }}")
-
-        echo "Merging PR #$PR_NUMBER in $REPO_OWNER/$REPO_NAME"
-
-        curl -X PUT \
-          -H "Authorization: token $PAT_TOKEN" \
-          -H "Accept: application/vnd.github.v3+json" \
-          https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/pulls/$PR_NUMBER/merge \
-          -d '{"commit_title": "Merging PR #'"$PR_NUMBER"'", "merge_method": "merge"}'
+        PR_NUMBER=${{ github.event.pull_request.number }}
+        echo "Merging pull request #$PR_NUMBER"
+        
+        # Merge the PR using GitHub CLI
+        gh pr merge $PR_NUMBER --repo ${{ github.repository }} --merge --admin

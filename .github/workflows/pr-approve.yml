@@ -1,40 +1,58 @@
-name: Auto-merge PR
-
+name: Merge PR from Fork
 on:
-  pull_request_review:
-    types: [submitted]
+  pull_request_target:
+    types: [opened, reopened, synchronize]  # Run when PR is created, updated, or reopened
 
 jobs:
-  auto-merge:
+  merge_pr:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write  # Grant write access to merge PRs
+      contents: write       # Grant access to repo contents
+
     steps:
-      # Step 1: Checkout the repository
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.ref }}
+        repository: ${{ github.event.pull_request.head.repo.full_name }}
 
-      # Step 2: Set up Git configuration
-      - name: Set up Git for merging
-        run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
+    - name: Set up GitHub CLI
+      run: |
+        echo "Installing GitHub CLI"
+        sudo apt-get update
+        sudo apt-get install -y gh
 
-      # Step 3: Fetch the PR source branch dynamically and merge it
-      - name: Fetch and merge PR branch
-        run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          PR_BRANCH="${{ github.head_ref }}"  # Dynamically get the source branch from the PR
+    - name: Authenticate GitHub CLI
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: gh auth login --with-token < <(echo "${{ secrets.GITHUB_TOKEN }}")
 
-          # Fetch the source branch (PR branch)
-          git fetch origin $PR_BRANCH
+    - name: Check PR Approval Status
+      id: check_approval
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        PR_NUMBER=${{ github.event.pull_request.number }}
+        echo "Checking review status for PR #$PR_NUMBER"
+        
+        # Get the reviews for the PR
+        REVIEWS=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews --jq '.[] | select(.state == "APPROVED")')
+        
+        if [ -z "$REVIEWS" ]; then
+          echo "No approvals found. Skipping merge."
+          exit 1  # Stop the workflow if there are no approved reviews
+        else
+          echo "PR has been approved. Proceeding with the merge."
+        fi
 
-          # Switch to the target branch (main)
-          git checkout main
-
-          # Pull the latest changes from the main branch
-          git pull origin main
-
-          # Merge the source branch (PR branch) into main
-          git merge --no-ff "origin/$PR_BRANCH" -m "Auto-merge PR #$PR_NUMBER"
-
-          # Push the merged changes to the main branch
-          git push origin main
+    - name: Merge PR
+      if: success()  # Ensure previous step succeeded (PR is approved)
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        PR_NUMBER=${{ github.event.pull_request.number }}
+        echo "Merging pull request #$PR_NUMBER"
+        
+        # Merge the PR using GitHub CLI
+        gh pr merge $PR_NUMBER --repo ${{ github.repository }} --merge --admin

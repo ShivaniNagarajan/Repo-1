@@ -1,54 +1,30 @@
 name: Merge PR from Fork
 
 on:
-  pull_request_review:  # Run only when a review is submitted
-    types: [submitted]   # Run when a review is submitted (not just opened)
-    
+  pull_request_review:
+    types: [submitted]
+
 jobs:
-  merge_pr:
+  merge:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write  # Grant write access to merge PRs
-      contents: write       # Grant access to repo contents
 
     steps:
-    - name: Checkout repository
+    - name: Checkout the code
       uses: actions/checkout@v3
-      with:
-        ref: ${{ github.event.pull_request.head.ref }}
-        repository: ${{ github.event.pull_request.head.repo.full_name }}
 
-    - name: Set up GitHub CLI
-      run: |
-        echo "Installing GitHub CLI"
-        sudo apt-get update
-        sudo apt-get install -y gh
-
-    - name: Check PR Approval Status
+    - name: Check if the PR is approved
       id: check_approval
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        PR_NUMBER=${{ github.event.pull_request.number }}
-        echo "Checking review status for PR #$PR_NUMBER"
-        
-        # Get the reviews for the PR and check if it is approved
-        REVIEWS=$(gh api repos/${{ github.repository }}/pulls/$PR_NUMBER/reviews --jq '.[] | select(.state == "APPROVED")')
-        
-        if [ -z "$REVIEWS" ]; then
-          echo "No approvals found. Skipping merge."
-          exit 1  # Stop the workflow if there are no approved reviews
-        else
-          echo "PR has been approved. Proceeding with the merge."
+        PR_REVIEW_STATE=$(jq --raw-output .pull_request.reviewers[0].state < $GITHUB_EVENT_PATH)
+        if [[ "$PR_REVIEW_STATE" != "APPROVED" ]]; then
+          echo "PR is not approved, exiting"
+          exit 1
         fi
 
     - name: Merge PR
-      if: success()  # Ensure previous step succeeded (PR is approved)
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      if: steps.check_approval.outcome == 'success'
       run: |
-        PR_NUMBER=${{ github.event.pull_request.number }}
-        echo "Merging pull request #$PR_NUMBER"
-        
-        # Merge the PR using GitHub CLI
-        gh pr merge $PR_NUMBER --repo ${{ github.repository }} --merge --admin
+        PR_NUMBER=$(jq --raw-output .pull_request.number < $GITHUB_EVENT_PATH)
+        curl -X PUT -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -d '{"merge_method":"merge"}' \
+          "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER/merge"

@@ -15,11 +15,29 @@ jobs:
     - name: Check if the PR is approved
       id: check_approval
       run: |
-        PR_REVIEW_STATE=$(jq --raw-output .pull_request.reviewers[0].state < $GITHUB_EVENT_PATH)
-        if [[ "$PR_REVIEW_STATE" != "APPROVED" ]]; then
-          echo "PR is not approved, exiting"
-          exit 1
-        fi
+        python3 -c "
+import json
+import os
+import requests
+
+# Load the event data
+with open(os.environ['GITHUB_EVENT_PATH']) as f:
+    event_data = json.load(f)
+
+pr_number = event_data['pull_request']['number']
+
+# Get PR reviews
+reviews = requests.get(
+    f'https://api.github.com/repos/{os.environ["GITHUB_REPOSITORY"]}/pulls/{pr_number}/reviews',
+    headers={'Authorization': f'token {os.environ["GITHUB_TOKEN"]}'}
+).json()
+
+# Check if there's an approval
+approved = any(review['state'] == 'APPROVED' for review in reviews)
+if not approved:
+    print('PR is not approved, exiting')
+    exit(1)
+        "
 
     - name: Merge PR
       if: steps.check_approval.outcome == 'success'
